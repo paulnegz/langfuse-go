@@ -9,6 +9,15 @@ This is [Langfuse](https://langfuse.com)'s **unofficial** Go client, designed to
 
 [Langfuse](https://langfuse.com) traces, evals, prompt management and metrics to debug and improve your LLM application.
 
+## Features
+
+- 🔍 **Comprehensive Tracing**: Track LLM calls, API requests, and custom operations
+- 📊 **Performance Metrics**: Monitor latency, token usage, and costs
+- 🎯 **Scoring & Evaluation**: Add quality scores and user feedback to traces
+- 🔄 **Async Processing**: Efficient batching and background ingestion
+- 🔗 **LangGraph Integration**: First-class support for LangGraph workflows
+- 🛠️ **Simple API**: Clean, idiomatic Go interface
+
 
 ## API support
 
@@ -29,7 +38,7 @@ This is [Langfuse](https://langfuse.com)'s **unofficial** Go client, designed to
 
 You can load langfuse-go into your project by using:
 ```
-go get github.com/henomis/langfuse-go
+go get github.com/paulnegz/langfuse-go
 ```
 
 
@@ -45,6 +54,38 @@ Just like the official Python SDK, these three environment variables will be use
 
 Please refer to the [examples folder](examples/cmd/) to see how to use the SDK.
 
+#### LangGraph Integration
+
+The SDK includes first-class support for tracing [LangGraph](https://github.com/paulnegz/langgraphgo) workflows:
+
+```go
+import (
+    "github.com/paulnegz/langfuse-go/langgraph"
+    "github.com/paulnegz/langgraphgo/graph"
+)
+
+// Create Langfuse hook for LangGraph
+hook := langgraph.NewHook(
+    langgraph.WithTraceName("my_workflow"),
+    langgraph.WithSessionID("session-123"),
+    langgraph.WithUserID("user-456"),
+)
+
+// Add to your graph tracer
+tracer := graph.NewTracer()
+tracer.AddHook(hook)
+
+// Create traced workflow
+tracedWorkflow := graph.NewTracedRunnable(workflow.Compile(), tracer)
+
+// Execute with automatic tracing
+result, err := tracedWorkflow.Invoke(ctx, input)
+```
+
+See the [LangGraph integration guide](langgraph/README.md) for detailed documentation and [examples](examples/langgraph/).
+
+#### Basic SDK Usage
+
 Here below a simple usage example:
 
 ```go
@@ -53,8 +94,8 @@ package main
 import (
 	"context"
 
-	"github.com/henomis/langfuse-go"
-	"github.com/henomis/langfuse-go/model"
+	"github.com/paulnegz/langfuse-go"
+	"github.com/paulnegz/langfuse-go/model"
 )
 
 func main() {
@@ -148,4 +189,4 @@ func main() {
 
 ## Who uses langfuse-go?
 
-* [LinGoose](https://github.com/henomis/lingoose) Go framework for building awesome LLM apps
+* [LangGraphGo](https://github.com/paulnegz/langgraphgo) Go implementation of LangGraph for building stateful, multi-actor LLM applications
