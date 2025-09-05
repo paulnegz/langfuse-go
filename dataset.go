@@ -3,6 +3,7 @@ package langfuse
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,16 +24,16 @@ type Dataset struct {
 
 // DatasetItem represents an item in a dataset
 type DatasetItem struct {
-	ID               string                 `json:"id"`
-	DatasetID        string                 `json:"datasetId"`
-	Input            interface{}            `json:"input"`
-	ExpectedOutput   interface{}            `json:"expectedOutput,omitempty"`
-	Metadata         map[string]interface{} `json:"metadata,omitempty"`
-	SourceTraceID    string                 `json:"sourceTraceId,omitempty"`
-	SourceSpanID     string                 `json:"sourceSpanId,omitempty"`
-	CreatedAt        time.Time              `json:"createdAt"`
-	UpdatedAt        time.Time              `json:"updatedAt"`
-	client           *Langfuse
+	ID             string                 `json:"id"`
+	DatasetID      string                 `json:"datasetId"`
+	Input          interface{}            `json:"input"`
+	ExpectedOutput interface{}            `json:"expectedOutput,omitempty"`
+	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+	SourceTraceID  string                 `json:"sourceTraceId,omitempty"`
+	SourceSpanID   string                 `json:"sourceSpanId,omitempty"`
+	CreatedAt      time.Time              `json:"createdAt"`
+	UpdatedAt      time.Time              `json:"updatedAt"`
+	client         *Langfuse
 }
 
 // DatasetRun represents an execution run of a dataset item
@@ -77,13 +78,13 @@ func (dc *DatasetClient) GetDataset(ctx context.Context, nameOrID string) (*Data
 		Items:       make([]*DatasetItem, 0),
 		client:      dc.client,
 	}
-	
+
 	// Load items
 	err := dataset.LoadItems(ctx)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return dataset, nil
 }
 
@@ -92,7 +93,7 @@ func (dc *DatasetClient) CreateDataset(ctx context.Context, name string, descrip
 	if name == "" {
 		return nil, fmt.Errorf("dataset name is required")
 	}
-	
+
 	dataset := &Dataset{
 		ID:          uuid.New().String(),
 		Name:        name,
@@ -103,9 +104,9 @@ func (dc *DatasetClient) CreateDataset(ctx context.Context, name string, descrip
 		Items:       make([]*DatasetItem, 0),
 		client:      dc.client,
 	}
-	
+
 	// In real implementation, this would save to Langfuse API
-	
+
 	return dataset, nil
 }
 
@@ -134,7 +135,7 @@ func (d *Dataset) LoadItems(ctx context.Context) error {
 			client:         d.client,
 		},
 	}
-	
+
 	return nil
 }
 
@@ -150,17 +151,17 @@ func (d *Dataset) CreateItem(input interface{}, expectedOutput interface{}, meta
 		UpdatedAt:      time.Now(),
 		client:         d.client,
 	}
-	
+
 	// In real implementation, save to API
 	d.Items = append(d.Items, item)
-	
+
 	return item, nil
 }
 
 // CreateItemFromTrace creates a dataset item from an existing trace
 func (d *Dataset) CreateItemFromTrace(traceID string, spanID string, metadata map[string]interface{}) (*DatasetItem, error) {
 	// In real implementation, fetch trace/span data from API
-	
+
 	item := &DatasetItem{
 		ID:            uuid.New().String(),
 		DatasetID:     d.ID,
@@ -171,9 +172,9 @@ func (d *Dataset) CreateItemFromTrace(traceID string, spanID string, metadata ma
 		UpdatedAt:     time.Now(),
 		client:        d.client,
 	}
-	
+
 	d.Items = append(d.Items, item)
-	
+
 	return item, nil
 }
 
@@ -202,7 +203,7 @@ func (di *DatasetItem) Run(name string, description string) (*DatasetRun, error)
 		client:      di.client,
 		item:        di,
 	}
-	
+
 	// Create associated trace
 	startTime := time.Now()
 	trace := &model.Trace{
@@ -217,14 +218,14 @@ func (di *DatasetItem) Run(name string, description string) (*DatasetRun, error)
 			"run_description": description,
 		},
 	}
-	
+
 	createdTrace, err := di.client.Trace(trace)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	run.TraceID = createdTrace.ID
-	
+
 	return run, nil
 }
 
@@ -238,7 +239,7 @@ type RunContext struct {
 // Start begins execution tracking for a run
 func (dr *DatasetRun) Start() *RunContext {
 	startTime := time.Now()
-	
+
 	// Create span for this run
 	span := &model.Span{
 		ID:        uuid.New().String(),
@@ -248,10 +249,13 @@ func (dr *DatasetRun) Start() *RunContext {
 		Input:     dr.item.Input,
 		Metadata:  dr.Metadata,
 	}
-	
-	dr.client.Span(span, nil)
+
+	_, err := dr.client.Span(span, nil)
+	if err != nil {
+		log.Printf("Failed to create span: %v", err)
+	}
 	dr.SpanID = span.ID
-	
+
 	return &RunContext{
 		run:       dr,
 		span:      span,
@@ -263,7 +267,7 @@ func (dr *DatasetRun) Start() *RunContext {
 func (rc *RunContext) End(output interface{}, err error) error {
 	endTime := time.Now()
 	rc.run.EndedAt = &endTime
-	
+
 	// Update span with results
 	metadata := map[string]interface{}{
 		"duration_ms": endTime.Sub(rc.startTime).Milliseconds(),
@@ -271,11 +275,11 @@ func (rc *RunContext) End(output interface{}, err error) error {
 	if err != nil {
 		metadata["error"] = err.Error()
 	}
-	
+
 	rc.span.EndTime = &endTime
 	rc.span.Output = output
 	rc.span.Metadata = metadata
-	
+
 	_, spanErr := rc.run.client.SpanEnd(rc.span)
 	return spanErr
 }
@@ -290,7 +294,7 @@ func (rc *RunContext) Score(name string, value float64, comment string) error {
 		Comment:       comment,
 		ObservationID: rc.run.SpanID,
 	}
-	
+
 	_, err := rc.run.client.Score(score)
 	return err
 }
@@ -318,31 +322,40 @@ func (de *DatasetEvaluator) Evaluate(ctx context.Context, runner func(interface{
 		Items:       make([]*ItemResult, 0),
 		Scores:      make(map[string]float64),
 	}
-	
+
 	totalScore := 0.0
-	
+
 	for _, item := range de.dataset.Items {
 		// Create run for this item
 		run, err := item.Run("evaluation", "Automated evaluation run")
 		if err != nil {
 			continue
 		}
-		
+
 		runCtx := run.Start()
-		
+
 		// Execute runner
 		output, runErr := runner(item.Input)
-		
+
 		// Calculate score
 		score := 0.0
 		if runErr == nil && de.evaluator != nil {
-			score, _ = de.evaluator(item.Input, item.ExpectedOutput, output)
+			evalScore, evalErr := de.evaluator(item.Input, item.ExpectedOutput, output)
+			if evalErr != nil {
+				log.Printf("Evaluator error: %v", evalErr)
+			} else {
+				score = evalScore
+			}
 		}
-		
+
 		// End run and record score
-		runCtx.End(output, runErr)
-		runCtx.Score("evaluation", score, "")
-		
+		if endErr := runCtx.End(output, runErr); endErr != nil {
+			log.Printf("Failed to end run context: %v", endErr)
+		}
+		if scoreErr := runCtx.Score("evaluation", score, ""); scoreErr != nil {
+			log.Printf("Failed to record score: %v", scoreErr)
+		}
+
 		// Record result
 		itemResult := &ItemResult{
 			ItemID:         item.ID,
@@ -353,18 +366,18 @@ func (de *DatasetEvaluator) Evaluate(ctx context.Context, runner func(interface{
 			Error:          runErr,
 			TraceID:        run.TraceID,
 		}
-		
+
 		results.Items = append(results.Items, itemResult)
 		totalScore += score
 	}
-	
+
 	results.EndedAt = time.Now()
-	
+
 	// Calculate aggregate scores
 	if len(results.Items) > 0 {
 		results.Scores["average"] = totalScore / float64(len(results.Items))
 	}
-	
+
 	return results, nil
 }
 

@@ -2,8 +2,9 @@ package main
 
 import (
 	"context"
+	"log"
 
-	"github.com/paulnegz/langfuse-go"
+	langfuse "github.com/paulnegz/langfuse-go"
 	"github.com/paulnegz/langfuse-go/model"
 )
 
@@ -15,12 +16,12 @@ func main() {
 		panic(err)
 	}
 
-	span, err := l.Span(&model.Span{Name: "test-span", TraceID: trace.ID}, nil)
-	if err != nil {
-		panic(err)
+	span, spanErr := l.Span(&model.Span{Name: "test-span", TraceID: trace.ID}, nil)
+	if spanErr != nil {
+		panic(spanErr)
 	}
 
-	generation, err := l.Generation(
+	generation, genErr := l.Generation(
 		&model.Generation{
 			TraceID: trace.ID,
 			Name:    "test-generation",
@@ -45,11 +46,11 @@ func main() {
 		},
 		&span.ID,
 	)
-	if err != nil {
-		panic(err)
+	if genErr != nil {
+		panic(genErr)
 	}
 
-	_, err = l.Event(
+	_, eventErr := l.Event(
 		&model.Event{
 			Name:    "test-event",
 			TraceID: trace.ID,
@@ -65,34 +66,36 @@ func main() {
 		},
 		&generation.ID,
 	)
-	if err != nil {
-		panic(err)
+	if eventErr != nil {
+		panic(eventErr)
 	}
 
 	generation.Output = model.M{
 		"completion": "The Q3 OKRs contain goals for multiple teams...",
 	}
-	_, err = l.GenerationEnd(generation)
-	if err != nil {
-		panic(err)
+	_, genEndErr := l.GenerationEnd(generation)
+	if genEndErr != nil {
+		panic(genEndErr)
 	}
 
-	_, err = l.Score(
+	_, scoreErr := l.Score(
 		&model.Score{
 			TraceID: trace.ID,
 			Name:    "test-score",
 			Value:   0.9,
 		},
 	)
-	if err != nil {
-		panic(err)
+	if scoreErr != nil {
+		panic(scoreErr)
 	}
 
-	_, err = l.SpanEnd(span)
-	if err != nil {
-		panic(err)
+	_, spanEndErr := l.SpanEnd(span)
+	if spanEndErr != nil {
+		panic(spanEndErr)
 	}
 
-	l.Flush(context.Background())
+	if err := l.Flush(context.Background()); err != nil {
+		log.Printf("Failed to flush: %v", err)
+	}
 
 }

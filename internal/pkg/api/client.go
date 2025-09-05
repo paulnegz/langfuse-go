@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -14,8 +15,8 @@ import (
 
 const (
 	langfuseDefaultEndpoint = "https://cloud.langfuse.com"
-	ingestionPath          = "/api/public/ingestion"
-	defaultTimeout         = 30 * time.Second
+	ingestionPath           = "/api/public/ingestion"
+	defaultTimeout          = 30 * time.Second
 )
 
 type Client struct {
@@ -51,31 +52,35 @@ func (c *Client) Ingestion(ctx context.Context, req *Ingestion, res *IngestionRe
 	}
 
 	url := c.baseURL + ingestionPath
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+	httpReq, reqErr := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if reqErr != nil {
+		return fmt.Errorf("failed to create request: %w", reqErr)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", c.basicAuth())
 
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+	resp, respErr := c.httpClient.Do(httpReq)
+	if respErr != nil {
+		return fmt.Errorf("failed to send request: %w", respErr)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Printf("Failed to close response body: %v", closeErr)
+		}
+	}()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
+	body, bodyErr := io.ReadAll(resp.Body)
+	if bodyErr != nil {
+		return fmt.Errorf("failed to read response: %w", bodyErr)
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
 	}
 
-	if err := json.Unmarshal(body, res); err != nil {
-		return fmt.Errorf("failed to unmarshal response: %w", err)
+	if unmarshalErr := json.Unmarshal(body, res); unmarshalErr != nil {
+		return fmt.Errorf("failed to unmarshal response: %w", unmarshalErr)
 	}
 
 	return nil

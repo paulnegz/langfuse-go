@@ -30,18 +30,22 @@ func (h *CustomLoggingHook) OnEvent(ctx context.Context, span *graph.TraceSpan) 
 		span.NodeName,
 		span.Duration,
 	)
-	h.logFile.WriteString(logEntry)
+	if _, err := h.logFile.WriteString(logEntry); err != nil {
+		log.Printf("Failed to write to log file: %v", err)
+	}
 }
 
 func (h *CustomLoggingHook) Close() {
-	h.logFile.Close()
+	if err := h.logFile.Close(); err != nil {
+		log.Printf("Failed to close log file: %v", err)
+	}
 }
 
 // MetricsHook collects metrics
 type MetricsHook struct {
-	nodeCount   int
-	totalTime   int64
-	errorCount  int
+	nodeCount  int
+	totalTime  int64
+	errorCount int
 }
 
 func NewMetricsHook() *MetricsHook {
@@ -71,8 +75,8 @@ func (h *MetricsHook) PrintMetrics() {
 // Example: Using multiple hooks together
 func main() {
 	// Set up Langfuse credentials
-	os.Setenv("LANGFUSE_PUBLIC_KEY", "your_public_key")
-	os.Setenv("LANGFUSE_SECRET_KEY", "your_secret_key")
+	_ = os.Setenv("LANGFUSE_PUBLIC_KEY", "your_public_key")
+	_ = os.Setenv("LANGFUSE_SECRET_KEY", "your_secret_key")
 
 	// Create different hooks
 	langfuseHook := langgraph.NewHook(
@@ -110,7 +114,7 @@ func main() {
 	tracedWorkflow := graph.NewTracedRunnable(compiled, tracer)
 
 	input := map[string]interface{}{
-		"value": 42,
+		"value":     42,
 		"operation": "multiply",
 	}
 
@@ -123,13 +127,13 @@ func main() {
 	}
 
 	fmt.Printf("\nWorkflow result: %v\n", result)
-	
+
 	// Flush Langfuse
 	langfuseHook.Flush()
-	
+
 	// Print metrics
 	metricsHook.PrintMetrics()
-	
+
 	fmt.Println("\nCheck workflow.log for detailed logging!")
 }
 
@@ -183,7 +187,7 @@ func createDemoWorkflow() *graph.StateGraph {
 	// Define flow
 	workflow.SetEntryPoint("validate")
 	workflow.AddEdge("validate", "multiply")
-	
+
 	workflow.AddConditionalEdges("multiply",
 		func(ctx context.Context, state DemoState) string {
 			if state.Operation == "square" {
@@ -196,7 +200,7 @@ func createDemoWorkflow() *graph.StateGraph {
 			"ai_enhance": "ai_enhance",
 		},
 	)
-	
+
 	workflow.AddEdge("square", "ai_enhance")
 	workflow.AddEdge("ai_enhance", "finalize")
 	workflow.AddEdge("finalize", graph.END)

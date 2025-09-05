@@ -14,8 +14,8 @@ import (
 // Example: Streaming workflow with real-time tracing
 func main() {
 	// Set up Langfuse credentials
-	os.Setenv("LANGFUSE_PUBLIC_KEY", "your_public_key")
-	os.Setenv("LANGFUSE_SECRET_KEY", "your_secret_key")
+	_ = os.Setenv("LANGFUSE_PUBLIC_KEY", "your_public_key")
+	_ = os.Setenv("LANGFUSE_SECRET_KEY", "your_secret_key")
 
 	// Create streaming workflow
 	workflow := createStreamingWorkflow()
@@ -49,7 +49,7 @@ func main() {
 
 	// Process streaming results
 	fmt.Println("Starting streaming workflow...")
-	
+
 	done := false
 	for !done {
 		select {
@@ -70,7 +70,7 @@ func main() {
 	}
 
 	fmt.Println("Streaming completed!")
-	
+
 	// Ensure final flush
 	hook.Flush()
 }
@@ -98,7 +98,7 @@ func createStreamingWorkflow() *graph.StateGraph {
 
 		state.Chunks = []string{}
 		words := splitIntoWords(text)
-		
+
 		for i := 0; i < len(words); i += chunkSize {
 			end := i + chunkSize
 			if end > len(words) {
@@ -120,17 +120,17 @@ func createStreamingWorkflow() *graph.StateGraph {
 		}
 
 		chunk := state.Chunks[state.CurrentIdx]
-		
+
 		// Simulate processing delay
 		time.Sleep(200 * time.Millisecond)
-		
+
 		// Process the chunk (in real app, this might be an LLM call)
 		processed := fmt.Sprintf("[PROCESSED: %s]", chunk)
 		state.Processed = append(state.Processed, processed)
-		
+
 		log.Printf("Processed chunk %d/%d", state.CurrentIdx+1, len(state.Chunks))
 		state.CurrentIdx++
-		
+
 		return state, nil
 	})
 
@@ -139,7 +139,7 @@ func createStreamingWorkflow() *graph.StateGraph {
 		// Combine all processed chunks
 		result := joinWords(state.Processed)
 		state.Text = result
-		
+
 		log.Printf("Aggregated %d processed chunks", len(state.Processed))
 		return state, nil
 	})
@@ -147,7 +147,7 @@ func createStreamingWorkflow() *graph.StateGraph {
 	// Define flow with loop for chunk processing
 	workflow.SetEntryPoint("chunker")
 	workflow.AddEdge("chunker", "process_chunk")
-	
+
 	// Conditional edge to loop or continue
 	workflow.AddConditionalEdges("process_chunk",
 		func(ctx context.Context, state StreamState) string {
@@ -161,7 +161,7 @@ func createStreamingWorkflow() *graph.StateGraph {
 			"aggregate":     "aggregate",
 		},
 	)
-	
+
 	workflow.AddEdge("aggregate", graph.END)
 
 	return workflow
@@ -172,7 +172,7 @@ func splitIntoWords(text string) []string {
 	// Simple word splitting (in production, use proper tokenization)
 	words := []string{}
 	current := ""
-	
+
 	for _, ch := range text {
 		if ch == ' ' || ch == '\n' || ch == '\t' {
 			if current != "" {
@@ -183,11 +183,11 @@ func splitIntoWords(text string) []string {
 			current += string(ch)
 		}
 	}
-	
+
 	if current != "" {
 		words = append(words, current)
 	}
-	
+
 	return words
 }
 

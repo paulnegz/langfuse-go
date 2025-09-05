@@ -1,14 +1,25 @@
 package langfuse
 
+// Version: 2025-09-05-fix-linter-v2
+
 import (
 	"context"
 	"fmt"
+	"log"
 	"reflect"
 	"runtime"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/paulnegz/langfuse-go/model"
+)
+
+// Context key types to avoid collisions
+type contextKey string
+
+const (
+	contextKeyObserver contextKey = "langfuse_observer"
+	contextKeyParentID contextKey = "langfuse_parent_id"
 )
 
 // ObservationType represents the type of observation
@@ -28,16 +39,16 @@ const (
 
 // Observer provides function observation capabilities similar to Python's @observe decorator
 type Observer struct {
-	client      *Langfuse
-	traceID     string
-	parentID    *string
-	sessionID   string
-	userID      string
-	name        string
-	obsType     ObservationType
-	metadata    map[string]interface{}
-	captureIO   bool
-	sampleRate  float64
+	client     *Langfuse
+	traceID    string
+	parentID   *string
+	sessionID  string
+	userID     string
+	name       string
+	obsType    ObservationType
+	metadata   map[string]interface{}
+	captureIO  bool
+	sampleRate float64
 }
 
 // ObserveOption configures the observer
@@ -134,7 +145,7 @@ func (o *Observer) Observe(fn interface{}) interface{} {
 		// Start observation
 		ctx := context.Background()
 		startTime := time.Now()
-		
+
 		// Create trace if needed
 		if o.traceID == "" {
 			trace := &model.Trace{
@@ -145,9 +156,9 @@ func (o *Observer) Observe(fn interface{}) interface{} {
 				UserID:    o.userID,
 				Metadata:  o.metadata,
 			}
-			
+
 			createdTrace, err := o.client.Trace(trace)
-			if err == nil && createdTrace != nil {
+			if err == nil {
 				o.traceID = createdTrace.ID
 			}
 		}
@@ -170,12 +181,12 @@ func (o *Observer) Observe(fn interface{}) interface{} {
 				Input:     input,
 				Metadata:  o.metadata,
 			}
-			
+
 			createdGen, err := o.client.Generation(gen, o.parentID)
-			if err == nil && createdGen != nil {
+			if err == nil {
 				observationID = createdGen.ID
 			}
-			
+
 		default: // Span or other types
 			span := &model.Span{
 				ID:        uuid.New().String(),
@@ -185,16 +196,16 @@ func (o *Observer) Observe(fn interface{}) interface{} {
 				Input:     input,
 				Metadata:  o.metadata,
 			}
-			
+
 			createdSpan, err := o.client.Span(span, o.parentID)
-			if err == nil && createdSpan != nil {
+			if err == nil {
 				observationID = createdSpan.ID
 			}
 		}
 
 		// Execute the function
 		results := fnValue.Call(args)
-		
+
 		// Capture output if enabled
 		var output interface{}
 		var fnErr error
@@ -205,11 +216,11 @@ func (o *Observer) Observe(fn interface{}) interface{} {
 		// End observation
 		endTime := time.Now()
 		duration := endTime.Sub(startTime)
-		
+
 		// Update observation with results
 		switch o.obsType {
 		case ObservationTypeGeneration:
-			o.client.GenerationEnd(&model.Generation{
+			if _, err := o.client.GenerationEnd(&model.Generation{
 				ID:      observationID,
 				TraceID: o.traceID,
 				EndTime: &endTime,
@@ -218,10 +229,12 @@ func (o *Observer) Observe(fn interface{}) interface{} {
 					"duration_ms": duration.Milliseconds(),
 					"error":       fnErr != nil,
 				},
-			})
-			
+			}); err != nil {
+				log.Printf("Failed to end generation: %v", err)
+			}
+
 		default:
-			o.client.SpanEnd(&model.Span{
+			if _, err := o.client.SpanEnd(&model.Span{
 				ID:      observationID,
 				TraceID: o.traceID,
 				EndTime: &endTime,
@@ -230,13 +243,15 @@ func (o *Observer) Observe(fn interface{}) interface{} {
 					"duration_ms": duration.Milliseconds(),
 					"error":       fnErr != nil,
 				},
-			})
+			}); err != nil {
+				log.Printf("Failed to end span: %v", err)
+			}
 		}
 
 		// Create child observer for nested calls
 		if observationID != "" {
 			// Store parent ID in context for nested observations
-			ctx = context.WithValue(ctx, "langfuse_parent_id", observationID)
+			_ = context.WithValue(ctx, contextKeyParentID, observationID)
 		}
 
 		return results
@@ -248,14 +263,21 @@ func (o *Observer) Observe(fn interface{}) interface{} {
 // ObserveFunc is a convenience function to wrap and execute a function with observation
 func ObserveFunc(client *Langfuse, fn func() error, opts ...ObserveOption) error {
 	observer := NewObserver(client, opts...)
-	wrappedFn := observer.Observe(fn).(func() error)
+	wrappedFn, ok := observer.Observe(fn).(func() error)
+	if !ok {
+		return fmt.Errorf("failed to wrap function")
+	}
 	return wrappedFn()
 }
 
 // ObserveWithResult wraps a function that returns a value and error
 func ObserveWithResult[T any](client *Langfuse, fn func() (T, error), opts ...ObserveOption) (T, error) {
 	observer := NewObserver(client, opts...)
-	wrappedFn := observer.Observe(fn).(func() (T, error))
+	wrappedFn, ok := observer.Observe(fn).(func() (T, error))
+	if !ok {
+		var zero T
+		return zero, fmt.Errorf("failed to wrap function")
+	}
 	return wrappedFn()
 }
 
@@ -276,7 +298,7 @@ func (o *Observer) captureArgs(args []reflect.Value) interface{} {
 	if len(args) == 1 {
 		return o.reflectValueToInterface(args[0])
 	}
-	
+
 	captured := make([]interface{}, len(args))
 	for i, arg := range args {
 		captured[i] = o.reflectValueToInterface(arg)
@@ -289,28 +311,30 @@ func (o *Observer) captureResults(results []reflect.Value) (interface{}, error) 
 	if len(results) == 0 {
 		return nil, nil
 	}
-	
+
 	// Check if last result is an error
 	var err error
 	if len(results) > 0 {
 		lastResult := results[len(results)-1]
 		if lastResult.Type().Implements(reflect.TypeOf((*error)(nil)).Elem()) {
 			if !lastResult.IsNil() {
-				err = lastResult.Interface().(error)
+				if e, ok := lastResult.Interface().(error); ok {
+					err = e
+				}
 			}
 		}
 	}
-	
+
 	// If only error result
 	if len(results) == 1 && err != nil {
 		return nil, err
 	}
-	
+
 	// If single non-error result
 	if len(results) == 1 {
 		return o.reflectValueToInterface(results[0]), nil
 	}
-	
+
 	// Multiple results
 	captured := make([]interface{}, 0, len(results))
 	for i, result := range results {
@@ -320,7 +344,7 @@ func (o *Observer) captureResults(results []reflect.Value) (interface{}, error) 
 		}
 		captured = append(captured, o.reflectValueToInterface(result))
 	}
-	
+
 	if len(captured) == 1 {
 		return captured[0], err
 	}
@@ -332,11 +356,11 @@ func (o *Observer) reflectValueToInterface(v reflect.Value) interface{} {
 	if !v.IsValid() {
 		return nil
 	}
-	
+
 	if v.Kind() == reflect.Ptr && v.IsNil() {
 		return nil
 	}
-	
+
 	// Handle special types
 	switch v.Kind() {
 	case reflect.Func:
@@ -367,7 +391,7 @@ type ObserveContext struct {
 // Start begins a new observation
 func (o *Observer) Start(name string) *ObserveContext {
 	startTime := time.Now()
-	
+
 	// Create trace if needed
 	if o.traceID == "" {
 		trace := &model.Trace{
@@ -378,13 +402,13 @@ func (o *Observer) Start(name string) *ObserveContext {
 			UserID:    o.userID,
 			Metadata:  o.metadata,
 		}
-		
-		createdTrace, _ := o.client.Trace(trace)
-		if createdTrace != nil {
+
+		createdTrace, err := o.client.Trace(trace)
+		if err == nil {
 			o.traceID = createdTrace.ID
 		}
 	}
-	
+
 	// Create observation
 	observationID := uuid.New().String()
 	switch o.obsType {
@@ -396,8 +420,10 @@ func (o *Observer) Start(name string) *ObserveContext {
 			StartTime: &startTime,
 			Metadata:  o.metadata,
 		}
-		o.client.Generation(gen, o.parentID)
-		
+		if _, err := o.client.Generation(gen, o.parentID); err != nil {
+			log.Printf("Failed to create generation: %v", err)
+		}
+
 	default:
 		span := &model.Span{
 			ID:        observationID,
@@ -406,9 +432,11 @@ func (o *Observer) Start(name string) *ObserveContext {
 			StartTime: &startTime,
 			Metadata:  o.metadata,
 		}
-		o.client.Span(span, o.parentID)
+		if _, err := o.client.Span(span, o.parentID); err != nil {
+			log.Printf("Failed to create span: %v", err)
+		}
 	}
-	
+
 	return &ObserveContext{
 		observer:      o,
 		observationID: observationID,
@@ -421,43 +449,47 @@ func (o *Observer) Start(name string) *ObserveContext {
 func (oc *ObserveContext) End(output interface{}, err error) {
 	endTime := time.Now()
 	duration := endTime.Sub(oc.startTime)
-	
+
 	metadata := map[string]interface{}{
 		"duration_ms": duration.Milliseconds(),
 	}
 	if err != nil {
 		metadata["error"] = err.Error()
 	}
-	
+
 	switch oc.obsType {
 	case ObservationTypeGeneration:
-		oc.observer.client.GenerationEnd(&model.Generation{
+		if _, genErr := oc.observer.client.GenerationEnd(&model.Generation{
 			ID:       oc.observationID,
 			TraceID:  oc.observer.traceID,
 			EndTime:  &endTime,
 			Output:   output,
 			Metadata: metadata,
-		})
-		
+		}); genErr != nil {
+			log.Printf("Failed to end generation: %v", genErr)
+		}
+
 	default:
-		oc.observer.client.SpanEnd(&model.Span{
+		if _, spanErr := oc.observer.client.SpanEnd(&model.Span{
 			ID:       oc.observationID,
 			TraceID:  oc.observer.traceID,
 			EndTime:  &endTime,
 			Output:   output,
 			Metadata: metadata,
-		})
+		}); spanErr != nil {
+			log.Printf("Failed to end span: %v", spanErr)
+		}
 	}
 }
 
 // WithObserver adds an observer to the context
 func WithObserver(ctx context.Context, observer *Observer) context.Context {
-	return context.WithValue(ctx, "langfuse_observer", observer)
+	return context.WithValue(ctx, contextKeyObserver, observer)
 }
 
 // ObserverFromContext retrieves an observer from context
 func ObserverFromContext(ctx context.Context) *Observer {
-	if observer, ok := ctx.Value("langfuse_observer").(*Observer); ok {
+	if observer, ok := ctx.Value(contextKeyObserver).(*Observer); ok {
 		return observer
 	}
 	return nil

@@ -60,26 +60,26 @@ func (pc *PromptClient) GetPrompt(ctx context.Context, name string, opts ...Prom
 	options := &promptOptions{
 		version: -1, // Latest version by default
 	}
-	
+
 	for _, opt := range opts {
 		opt(options)
 	}
-	
+
 	// Check cache first
 	cacheKey := pc.buildCacheKey(name, options)
 	if cached := pc.cache.Get(cacheKey); cached != nil {
 		return cached, nil
 	}
-	
+
 	// Fetch from API
 	prompt, err := pc.fetchPrompt(ctx, name, options)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Cache the result
 	pc.cache.Set(cacheKey, prompt)
-	
+
 	return prompt, nil
 }
 
@@ -89,17 +89,17 @@ func (pc *PromptClient) CreatePrompt(ctx context.Context, prompt *Prompt) (*Prom
 	if prompt.Name == "" {
 		return nil, fmt.Errorf("prompt name is required")
 	}
-	
+
 	if prompt.Type != PromptTypeText && prompt.Type != PromptTypeChat {
 		return nil, fmt.Errorf("invalid prompt type: %s", prompt.Type)
 	}
-	
+
 	// Send to API (simplified for example)
 	// In real implementation, this would call the Langfuse API
-	
+
 	// Invalidate cache for this prompt name
 	pc.cache.InvalidatePrefix(prompt.Name)
-	
+
 	return prompt, nil
 }
 
@@ -109,7 +109,7 @@ func (p *Prompt) Compile(variables map[string]interface{}) (*CompiledPrompt, err
 		Type:   p.Type,
 		Config: p.Config,
 	}
-	
+
 	switch p.Type {
 	case PromptTypeText:
 		text, ok := p.Prompt.(string)
@@ -117,15 +117,15 @@ func (p *Prompt) Compile(variables map[string]interface{}) (*CompiledPrompt, err
 			return nil, fmt.Errorf("invalid text prompt format")
 		}
 		compiled.Text = replaceVariables(text, variables)
-		
+
 	case PromptTypeChat:
-		messages, ok := p.Prompt.([]ChatMessage)
-		if !ok {
+		messages, isMessages := p.Prompt.([]ChatMessage)
+		if !isMessages {
 			// Try to convert from []interface{}
-			if msgs, ok := p.Prompt.([]interface{}); ok {
+			if msgs, isMsgSlice := p.Prompt.([]interface{}); isMsgSlice {
 				messages = make([]ChatMessage, 0, len(msgs))
 				for _, msg := range msgs {
-					if m, ok := msg.(map[string]interface{}); ok {
+					if m, isMap := msg.(map[string]interface{}); isMap {
 						messages = append(messages, ChatMessage{
 							Role:    getString(m, "role"),
 							Content: getString(m, "content"),
@@ -136,7 +136,7 @@ func (p *Prompt) Compile(variables map[string]interface{}) (*CompiledPrompt, err
 				return nil, fmt.Errorf("invalid chat prompt format")
 			}
 		}
-		
+
 		compiled.Chat = make([]ChatMessage, len(messages))
 		for i, msg := range messages {
 			compiled.Chat[i] = ChatMessage{
@@ -144,18 +144,18 @@ func (p *Prompt) Compile(variables map[string]interface{}) (*CompiledPrompt, err
 				Content: replaceVariables(msg.Content, variables),
 			}
 		}
-		
+
 	default:
 		return nil, fmt.Errorf("unsupported prompt type: %s", p.Type)
 	}
-	
+
 	return compiled, nil
 }
 
 // replaceVariables replaces {{variable}} placeholders with values
 func replaceVariables(template string, variables map[string]interface{}) string {
 	re := regexp.MustCompile(`\{\{(\w+)\}\}`)
-	
+
 	return re.ReplaceAllStringFunc(template, func(match string) string {
 		varName := re.FindStringSubmatch(match)[1]
 		if value, ok := variables[varName]; ok {
@@ -213,9 +213,9 @@ func (pc *PromptClient) buildCacheKey(name string, opts *promptOptions) string {
 
 // PromptCache implements a simple TTL cache for prompts
 type PromptCache struct {
-	mu      sync.RWMutex
-	items   map[string]*cacheItem
-	ttl     time.Duration
+	mu    sync.RWMutex
+	items map[string]*cacheItem
+	ttl   time.Duration
 }
 
 type cacheItem struct {
@@ -229,10 +229,10 @@ func NewPromptCache(ttl time.Duration) *PromptCache {
 		items: make(map[string]*cacheItem),
 		ttl:   ttl,
 	}
-	
+
 	// Start cleanup goroutine
 	go cache.cleanup()
-	
+
 	return cache
 }
 
@@ -240,16 +240,16 @@ func NewPromptCache(ttl time.Duration) *PromptCache {
 func (c *PromptCache) Get(key string) *Prompt {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	item, ok := c.items[key]
 	if !ok {
 		return nil
 	}
-	
+
 	if time.Now().After(item.expiresAt) {
 		return nil // Expired
 	}
-	
+
 	return item.prompt
 }
 
@@ -257,7 +257,7 @@ func (c *PromptCache) Get(key string) *Prompt {
 func (c *PromptCache) Set(key string, prompt *Prompt) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	c.items[key] = &cacheItem{
 		prompt:    prompt,
 		expiresAt: time.Now().Add(c.ttl),
@@ -268,7 +268,7 @@ func (c *PromptCache) Set(key string, prompt *Prompt) {
 func (c *PromptCache) InvalidatePrefix(prefix string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	for key := range c.items {
 		if strings.HasPrefix(key, prefix) {
 			delete(c.items, key)
@@ -280,7 +280,7 @@ func (c *PromptCache) InvalidatePrefix(prefix string) {
 func (c *PromptCache) cleanup() {
 	ticker := time.NewTicker(c.ttl)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		c.mu.Lock()
 		now := time.Now()
@@ -295,8 +295,8 @@ func (c *PromptCache) cleanup() {
 
 // Helper function to safely get string from map
 func getString(m map[string]interface{}, key string) string {
-	if v, ok := m[key]; ok {
-		if s, ok := v.(string); ok {
+	if v, exists := m[key]; exists {
+		if s, isString := v.(string); isString {
 			return s
 		}
 	}

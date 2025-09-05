@@ -13,8 +13,8 @@ import (
 // Example: Basic LangGraph workflow with Langfuse tracing
 func main() {
 	// Set up Langfuse credentials
-	os.Setenv("LANGFUSE_PUBLIC_KEY", "your_public_key")
-	os.Setenv("LANGFUSE_SECRET_KEY", "your_secret_key")
+	_ = os.Setenv("LANGFUSE_PUBLIC_KEY", "your_public_key")
+	_ = os.Setenv("LANGFUSE_SECRET_KEY", "your_secret_key")
 
 	// Create a simple workflow
 	workflow := createWorkflow()

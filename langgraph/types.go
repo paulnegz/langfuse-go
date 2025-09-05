@@ -7,22 +7,27 @@ import (
 	"github.com/tmc/langgraphgo/graph"
 )
 
+// Runnable interface for objects that can be invoked
+type Runnable interface {
+	Invoke(ctx context.Context, initialState interface{}) (interface{}, error)
+}
+
 // TraceContext holds contextual information for tracing
 type TraceContext struct {
-	TraceID       string
-	ParentSpanID  string
-	UserID        string
-	SessionID     string
-	Metadata      map[string]interface{}
-	Tags          []string
+	TraceID      string
+	ParentSpanID string
+	UserID       string
+	SessionID    string
+	Metadata     map[string]interface{}
+	Tags         []string
 }
 
 // NodeInfo contains information about a graph node
 type NodeInfo struct {
-	Name        string
-	Type        NodeType
-	Model       string
-	Parameters  map[string]interface{}
+	Name       string
+	Type       NodeType
+	Model      string
+	Parameters map[string]interface{}
 }
 
 // NodeType represents the type of a graph node
@@ -111,20 +116,20 @@ func (b *TraceHookBuilder) Build() *Hook {
 	return b.hook
 }
 
-// TracedRunnable wraps a graph runnable with tracing
+// TracedRunnable wraps a runnable with tracing
 type TracedRunnable struct {
-	runnable graph.Runnable
+	runnable Runnable
 	tracer   *graph.Tracer
 	hooks    []graph.TraceHook
 }
 
 // NewTracedRunnable creates a new traced runnable
-func NewTracedRunnable(runnable graph.Runnable, hooks ...graph.TraceHook) *TracedRunnable {
+func NewTracedRunnable(runnable Runnable, hooks ...graph.TraceHook) *TracedRunnable {
 	tracer := graph.NewTracer()
 	for _, hook := range hooks {
 		tracer.AddHook(hook)
 	}
-	
+
 	return &TracedRunnable{
 		runnable: runnable,
 		tracer:   tracer,
@@ -136,36 +141,41 @@ func NewTracedRunnable(runnable graph.Runnable, hooks ...graph.TraceHook) *Trace
 func (t *TracedRunnable) Invoke(ctx context.Context, input interface{}) (interface{}, error) {
 	// Set initial input for hooks that support it
 	for _, hook := range t.hooks {
-		if h, ok := hook.(*Hook); ok {
+		if h, isHook := hook.(*Hook); isHook {
 			h.SetInitialInput(input)
 		}
 	}
-	
-	// Create traced runnable
-	traced := graph.NewTracedRunnable(&t.runnable, t.tracer)
-	
-	// Execute with tracing
-	return traced.Invoke(ctx, input)
+
+	// For graph.Runnable, use the traced version from langgraphgo
+	if graphRunnable, isGraphRunnable := t.runnable.(*graph.Runnable); isGraphRunnable {
+		traced := graph.NewTracedRunnable(graphRunnable, t.tracer)
+		return traced.Invoke(ctx, input)
+	}
+
+	// For graph.StateRunnable, execute directly (no traced version available)
+	if stateRunnable, isStateRunnable := t.runnable.(*graph.StateRunnable); isStateRunnable {
+		return stateRunnable.Invoke(ctx, input)
+	}
+
+	// For other runnables, execute directly without langgraphgo tracing
+	// (the hooks will still receive events via other mechanisms if implemented)
+	return t.runnable.Invoke(ctx, input)
 }
 
 // Stream executes the runnable with streaming and tracing
 func (t *TracedRunnable) Stream(ctx context.Context, input interface{}) (<-chan interface{}, <-chan error) {
 	// Set initial input for hooks that support it
 	for _, hook := range t.hooks {
-		if h, ok := hook.(*Hook); ok {
+		if h, isHookType := hook.(*Hook); isHookType {
 			h.SetInitialInput(input)
 		}
 	}
-	
-	// Create traced runnable
-	traced := graph.NewTracedRunnable(&t.runnable, t.tracer)
-	
-	// Execute with streaming and tracing
-	// Stream is not available on TracedRunnable, use Invoke instead
-	result, err := traced.Invoke(ctx, input)
+
+	// Execute with tracing - use the same logic as Invoke
+	result, err := t.Invoke(ctx, input)
 	ch := make(chan interface{}, 1)
 	errCh := make(chan error, 1)
-	
+
 	go func() {
 		if err != nil {
 			errCh <- err
@@ -175,7 +185,7 @@ func (t *TracedRunnable) Stream(ctx context.Context, input interface{}) (<-chan 
 		close(ch)
 		close(errCh)
 	}()
-	
+
 	return ch, errCh
 }
 
@@ -211,7 +221,7 @@ func (f *FilteredHook) OnEvent(ctx context.Context, span *graph.TraceSpan) {
 			return
 		}
 	}
-	
+
 	// Check if event should be included (if include list is specified)
 	if len(f.filter.IncludeEvents) > 0 {
 		included := false
@@ -225,14 +235,14 @@ func (f *FilteredHook) OnEvent(ctx context.Context, span *graph.TraceSpan) {
 			return
 		}
 	}
-	
+
 	// Check duration filter for end events
 	if span.Event == graph.TraceEventNodeEnd || span.Event == graph.TraceEventGraphEnd {
 		if f.filter.MinDuration > 0 && span.Duration < f.filter.MinDuration {
 			return
 		}
 	}
-	
+
 	// Pass through to wrapped hook
 	f.hook.OnEvent(ctx, span)
 }

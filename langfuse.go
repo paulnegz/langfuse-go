@@ -32,7 +32,7 @@ func New(ctx context.Context) *Langfuse {
 			func(ctx context.Context, events []model.IngestionEvent) {
 				err := ingest(ctx, client, events)
 				if err != nil {
-					fmt.Println(err)
+					_, _ = fmt.Println(err)
 				}
 			},
 		),

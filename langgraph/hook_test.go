@@ -73,7 +73,7 @@ func TestNewHook(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			hook := NewHook(tt.options...)
-			
+
 			if hook.config.TraceName != tt.expected.TraceName {
 				t.Errorf("TraceName: got %v, want %v", hook.config.TraceName, tt.expected.TraceName)
 			}
@@ -120,18 +120,18 @@ func TestTraceHookBuilder(t *testing.T) {
 // Test SetInitialInput
 func TestSetInitialInput(t *testing.T) {
 	hook := NewHook()
-	
+
 	input := map[string]interface{}{
-		"key": "value",
+		"key":    "value",
 		"number": 42,
 	}
-	
+
 	hook.SetInitialInput(input)
-	
+
 	if hook.initialInput == nil {
 		t.Error("Initial input was not set")
 	}
-	
+
 	if inputMap, ok := hook.initialInput.(map[string]interface{}); ok {
 		if inputMap["key"] != "value" {
 			t.Errorf("Input key: got %v, want value", inputMap["key"])
@@ -147,7 +147,7 @@ func TestSetInitialInput(t *testing.T) {
 // Test AI operation detection
 func TestIsAIOperation(t *testing.T) {
 	hook := NewHook()
-	
+
 	tests := []struct {
 		nodeName string
 		expected bool
@@ -164,7 +164,7 @@ func TestIsAIOperation(t *testing.T) {
 		{"validate_input", false},
 		{"transform_output", false},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.nodeName, func(t *testing.T) {
 			result := hook.isAIOperation(tt.nodeName)
@@ -178,7 +178,7 @@ func TestIsAIOperation(t *testing.T) {
 // Test model extraction
 func TestExtractModel(t *testing.T) {
 	hook := NewHook()
-	
+
 	tests := []struct {
 		name     string
 		span     *graph.TraceSpan
@@ -223,7 +223,7 @@ func TestExtractModel(t *testing.T) {
 			expected: "unknown",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := hook.extractModel(tt.span)
@@ -239,7 +239,7 @@ func TestFilteredHook(t *testing.T) {
 	baseHook := &MockTraceHook{
 		events: []graph.TraceEvent{},
 	}
-	
+
 	filter := EventFilter{
 		IncludeEvents: []graph.TraceEvent{
 			graph.TraceEventNodeStart,
@@ -247,49 +247,49 @@ func TestFilteredHook(t *testing.T) {
 		},
 		MinDuration: 100 * time.Millisecond,
 	}
-	
+
 	filteredHook := NewFilteredHook(baseHook, filter)
 	ctx := context.Background()
-	
+
 	// Event that should be filtered out (wrong type)
 	span1 := &graph.TraceSpan{
 		Event: graph.TraceEventEdgeTraversal,
 	}
 	filteredHook.OnEvent(ctx, span1)
-	
+
 	if len(baseHook.events) != 0 {
 		t.Error("Edge traversal event should be filtered out")
 	}
-	
+
 	// Event that should pass (correct type)
 	span2 := &graph.TraceSpan{
 		Event:    graph.TraceEventNodeStart,
 		NodeName: "test_node",
 	}
 	filteredHook.OnEvent(ctx, span2)
-	
+
 	if len(baseHook.events) != 1 {
 		t.Error("Node start event should pass through")
 	}
-	
+
 	// Event that should be filtered out (too short duration)
 	span3 := &graph.TraceSpan{
 		Event:    graph.TraceEventNodeEnd,
 		Duration: 50 * time.Millisecond,
 	}
 	filteredHook.OnEvent(ctx, span3)
-	
+
 	if len(baseHook.events) != 1 {
 		t.Error("Short duration event should be filtered out")
 	}
-	
+
 	// Event that should pass (long duration)
 	span4 := &graph.TraceSpan{
 		Event:    graph.TraceEventNodeEnd,
 		Duration: 200 * time.Millisecond,
 	}
 	filteredHook.OnEvent(ctx, span4)
-	
+
 	if len(baseHook.events) != 2 {
 		t.Error("Long duration event should pass through")
 	}
@@ -300,17 +300,17 @@ func TestMultiHook(t *testing.T) {
 	hook1 := &MockTraceHook{events: []graph.TraceEvent{}}
 	hook2 := &MockTraceHook{events: []graph.TraceEvent{}}
 	hook3 := &MockTraceHook{events: []graph.TraceEvent{}}
-	
+
 	multiHook := NewMultiHook(hook1, hook2, hook3)
 	ctx := context.Background()
-	
+
 	span := &graph.TraceSpan{
 		Event:    graph.TraceEventNodeStart,
 		NodeName: "test",
 	}
-	
+
 	multiHook.OnEvent(ctx, span)
-	
+
 	if len(hook1.events) != 1 {
 		t.Error("Hook1 should receive event")
 	}
@@ -320,18 +320,18 @@ func TestMultiHook(t *testing.T) {
 	if len(hook3.events) != 1 {
 		t.Error("Hook3 should receive event")
 	}
-	
+
 	// Test adding another hook
 	hook4 := &MockTraceHook{events: []graph.TraceEvent{}}
 	multiHook.AddHook(hook4)
-	
+
 	span2 := &graph.TraceSpan{
 		Event:    graph.TraceEventNodeEnd,
 		NodeName: "test",
 	}
-	
+
 	multiHook.OnEvent(ctx, span2)
-	
+
 	if len(hook4.events) != 1 {
 		t.Error("Hook4 should receive event after being added")
 	}
@@ -362,12 +362,12 @@ func TestContainsIgnoreCase(t *testing.T) {
 		{"", "test", false},
 		{"test", "", true},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.s+"_"+tt.substr, func(t *testing.T) {
 			result := containsIgnoreCase(tt.s, tt.substr)
 			if result != tt.expected {
-				t.Errorf("containsIgnoreCase(%q, %q): got %v, want %v", 
+				t.Errorf("containsIgnoreCase(%q, %q): got %v, want %v",
 					tt.s, tt.substr, result, tt.expected)
 			}
 		})
@@ -376,30 +376,39 @@ func TestContainsIgnoreCase(t *testing.T) {
 
 // Test traced runnable
 func TestTracedRunnable(t *testing.T) {
-	// Create mock runnable
-	mockRunnable := &MockRunnable{
-		result: "test_result",
+	// Create a simple message graph (which compiles to Runnable)
+	workflow := graph.NewMessageGraph()
+	workflow.AddNode("test_node", func(ctx context.Context, state interface{}) (interface{}, error) {
+		return "test_result", nil
+	})
+	workflow.SetEntryPoint("test_node")
+	workflow.AddEdge("test_node", graph.END)
+
+	// Compile the graph
+	compiled, err := workflow.Compile()
+	if err != nil {
+		t.Fatalf("Failed to compile workflow: %v", err)
 	}
-	
+
 	// Create mock hook
 	mockHook := &MockTraceHook{
 		events: []graph.TraceEvent{},
 	}
-	
+
 	// Create traced runnable
-	traced := NewTracedRunnable(mockRunnable, mockHook)
-	
+	traced := NewTracedRunnable(compiled, mockHook)
+
 	// Execute
 	ctx := context.Background()
 	input := map[string]interface{}{
 		"test": "input",
 	}
-	
+
 	result, err := traced.Invoke(ctx, input)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
-	
+
 	if result != "test_result" {
 		t.Errorf("Result: got %v, want test_result", result)
 	}
@@ -418,16 +427,16 @@ func (m *MockRunnable) Invoke(ctx context.Context, input interface{}) (interface
 func (m *MockRunnable) Stream(ctx context.Context, input interface{}) (<-chan interface{}, <-chan error) {
 	outputChan := make(chan interface{}, 1)
 	errorChan := make(chan error, 1)
-	
+
 	if m.err != nil {
 		errorChan <- m.err
 	} else {
 		outputChan <- m.result
 	}
-	
+
 	close(outputChan)
 	close(errorChan)
-	
+
 	return outputChan, errorChan
 }
 
@@ -435,7 +444,7 @@ func (m *MockRunnable) Stream(ctx context.Context, input interface{}) (<-chan in
 func BenchmarkHookOnEvent(b *testing.B) {
 	hook := NewHook()
 	ctx := context.Background()
-	
+
 	span := &graph.TraceSpan{
 		ID:        uuid.New().String(),
 		Event:     graph.TraceEventNodeStart,
@@ -443,7 +452,7 @@ func BenchmarkHookOnEvent(b *testing.B) {
 		StartTime: time.Now(),
 		State:     map[string]interface{}{"key": "value"},
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		hook.OnEvent(ctx, span)
@@ -459,17 +468,17 @@ func BenchmarkFilteredHook(b *testing.B) {
 		},
 		MinDuration: 10 * time.Millisecond,
 	}
-	
+
 	filteredHook := NewFilteredHook(baseHook, filter)
 	ctx := context.Background()
-	
+
 	span := &graph.TraceSpan{
 		Event:     graph.TraceEventNodeEnd,
 		Duration:  100 * time.Millisecond,
 		NodeName:  "benchmark_node",
 		StartTime: time.Now(),
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		filteredHook.OnEvent(ctx, span)
@@ -480,16 +489,16 @@ func BenchmarkMultiHook(b *testing.B) {
 	hook1 := NewHook()
 	hook2 := NewHook()
 	hook3 := NewHook()
-	
+
 	multiHook := NewMultiHook(hook1, hook2, hook3)
 	ctx := context.Background()
-	
+
 	span := &graph.TraceSpan{
 		Event:     graph.TraceEventNodeStart,
 		NodeName:  "benchmark_node",
 		StartTime: time.Now(),
 	}
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		multiHook.OnEvent(ctx, span)

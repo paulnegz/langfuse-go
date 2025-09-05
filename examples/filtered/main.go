@@ -14,8 +14,8 @@ import (
 // Example: Using filtered hooks for selective tracing
 func main() {
 	// Set up Langfuse credentials
-	os.Setenv("LANGFUSE_PUBLIC_KEY", "your_public_key")
-	os.Setenv("LANGFUSE_SECRET_KEY", "your_secret_key")
+	_ = os.Setenv("LANGFUSE_PUBLIC_KEY", "your_public_key")
+	_ = os.Setenv("LANGFUSE_SECRET_KEY", "your_secret_key")
 
 	// Create base hook
 	baseHook := langgraph.NewHook(
@@ -72,10 +72,10 @@ func main() {
 // createNoisyWorkflow creates a workflow with many quick operations
 func createNoisyWorkflow() *graph.StateGraph {
 	type NoisyState struct {
-		Iterations    int
-		QuickOps      int
-		SlowOps       int
-		Results       []string
+		Iterations int
+		QuickOps   int
+		SlowOps    int
+		Results    []string
 	}
 
 	workflow := graph.NewStateGraph(NoisyState{})
@@ -117,7 +117,7 @@ func createNoisyWorkflow() *graph.StateGraph {
 
 	// Define flow
 	workflow.SetEntryPoint("controller")
-	
+
 	workflow.AddConditionalEdges("controller",
 		func(ctx context.Context, state NoisyState) string {
 			if state.Iterations > 7 {

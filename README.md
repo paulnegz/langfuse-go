@@ -17,6 +17,7 @@ This is [Langfuse](https://langfuse.com)'s **unofficial** Go client, designed to
 - 🔄 **Async Processing**: Efficient batching and background ingestion
 - 🔗 **LangGraph Integration**: First-class support for LangGraph workflows
 - 🛠️ **Simple API**: Clean, idiomatic Go interface
+- 🔄 **LangChain Callbacks**: Compatible callback handlers in `/langchain` package
 
 
 ## API support

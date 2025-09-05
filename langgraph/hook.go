@@ -1,4 +1,4 @@
-package langgraph
+package langgraph // v1.0.1 - lint fixes
 
 import (
 	"context"
@@ -207,10 +207,10 @@ func (h *Hook) handleGraphStart(ctx context.Context, span *graph.TraceSpan) {
 	if sessionID == "" {
 		sessionID = fmt.Sprintf("graph_%s", traceID)
 	}
-	if uid, ok := metadata["user_id"].(string); ok && userID == "" {
+	if uid, hasUID := metadata["user_id"].(string); hasUID && userID == "" {
 		userID = uid
 	}
-	if sid, ok := metadata["session_id"].(string); ok && sessionID == "" {
+	if sid, hasSID := metadata["session_id"].(string); hasSID && sessionID == "" {
 		sessionID = sid
 	}
 
@@ -250,10 +250,10 @@ func (h *Hook) handleGraphStart(ctx context.Context, span *graph.TraceSpan) {
 		},
 	}
 
-	createdRootSpan, err := h.client.Span(rootSpan, nil)
-	if err != nil {
-		log.Printf("Failed to create root span: %v", err)
-	} else if createdRootSpan != nil && createdRootSpan.ID != "" {
+	createdRootSpan, spanErr := h.client.Span(rootSpan, nil)
+	if spanErr != nil {
+		log.Printf("Failed to create root span: %v", spanErr)
+	} else if createdRootSpan.ID != "" {
 		rootSpanID = createdRootSpan.ID
 	}
 
@@ -269,8 +269,8 @@ func (h *Hook) handleGraphEnd(ctx context.Context, span *graph.TraceSpan) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	trace, ok := h.traces[span.ID]
-	if !ok {
+	trace, traceFound := h.traces[span.ID]
+	if !traceFound {
 		return
 	}
 
@@ -278,14 +278,14 @@ func (h *Hook) handleGraphEnd(ctx context.Context, span *graph.TraceSpan) {
 	endTime := span.EndTime
 
 	// Update metadata
-	if metadata, ok := trace.Metadata.(map[string]interface{}); ok {
-		metadata["duration_ms"] = span.Duration.Milliseconds()
-		metadata["status"] = "completed"
+	if traceMetadata, isMap := trace.Metadata.(map[string]interface{}); isMap {
+		traceMetadata["duration_ms"] = span.Duration.Milliseconds()
+		traceMetadata["status"] = "completed"
 		if span.Error != nil {
-			metadata["error"] = span.Error.Error()
-			metadata["status"] = "error"
+			traceMetadata["error"] = span.Error.Error()
+			traceMetadata["status"] = "error"
 		}
-		trace.Metadata = metadata
+		trace.Metadata = traceMetadata
 	}
 
 	// Update the trace
@@ -300,7 +300,7 @@ func (h *Hook) handleGraphEnd(ctx context.Context, span *graph.TraceSpan) {
 	}
 
 	// Update root span
-	if rootSpanID, ok := h.observations[span.ID]; ok {
+	if rootSpanID, exists := h.observations[span.ID]; exists {
 		rootSpan := &model.Span{
 			ID:      rootSpanID,
 			TraceID: trace.ID,
@@ -308,9 +308,8 @@ func (h *Hook) handleGraphEnd(ctx context.Context, span *graph.TraceSpan) {
 			EndTime: &endTime,
 			Output:  span.State,
 		}
-		_, err := h.client.Span(rootSpan, nil)
-		if err != nil {
-			log.Printf("Failed to update root span: %v", err)
+		if _, rootErr := h.client.Span(rootSpan, nil); rootErr != nil {
+			log.Printf("Failed to update root span: %v", rootErr)
 		}
 	}
 
@@ -328,13 +327,13 @@ func (h *Hook) handleNodeStart(ctx context.Context, span *graph.TraceSpan) {
 	// Find parent trace
 	var traceID string
 	if span.ParentID != "" {
-		if trace, ok := h.traces[span.ParentID]; ok {
-			traceID = trace.ID
+		if parentTrace, traceExists := h.traces[span.ParentID]; traceExists {
+			traceID = parentTrace.ID
 		}
 	} else {
 		// Find the current trace
-		for _, trace := range h.traces {
-			traceID = trace.ID
+		for _, currentTrace := range h.traces {
+			traceID = currentTrace.ID
 			break
 		}
 	}
@@ -348,6 +347,14 @@ func (h *Hook) handleNodeStart(ctx context.Context, span *graph.TraceSpan) {
 
 	// Check if this is an AI operation
 	isAINode := h.isAIOperation(span.NodeName)
+
+	// Find parent observation (used in both branches)
+	var parentObsID *string
+	var hasParent bool
+	if defaultParent, hasDefaultParent := h.observations["default_parent"]; hasDefaultParent {
+		parentObsID = &defaultParent
+		hasParent = true
+	}
 
 	if isAINode {
 		// Create generation for AI operations
@@ -365,21 +372,15 @@ func (h *Hook) handleNodeStart(ctx context.Context, span *graph.TraceSpan) {
 			ModelParameters: h.extractModelParams(span),
 		}
 
-		// Find parent observation
-		var parentObsID *string
-		if defaultParent, ok := h.observations["default_parent"]; ok {
-			parentObsID = &defaultParent
-		}
-
-		createdGen, err := h.client.Generation(generation, parentObsID)
-		if err != nil {
-			log.Printf("Failed to create generation: %v", err)
+		createdGen, genErr := h.client.Generation(generation, parentObsID)
+		if genErr != nil {
+			log.Printf("Failed to create generation: %v", genErr)
 			return
 		}
-		if createdGen != nil && createdGen.ID != "" {
+		if createdGen.ID != "" {
 			spanID = createdGen.ID
 		}
-		if parentObsID != nil {
+		if hasParent {
 			h.parents[spanID] = *parentObsID
 		}
 	} else {
@@ -396,21 +397,15 @@ func (h *Hook) handleNodeStart(ctx context.Context, span *graph.TraceSpan) {
 			},
 		}
 
-		// Find parent observation
-		var parentObsID *string
-		if defaultParent, ok := h.observations["default_parent"]; ok {
-			parentObsID = &defaultParent
-		}
-
-		createdSpan, err := h.client.Span(langfuseSpan, parentObsID)
-		if err != nil {
-			log.Printf("Failed to create span: %v", err)
+		createdSpan, spanErr := h.client.Span(langfuseSpan, parentObsID)
+		if spanErr != nil {
+			log.Printf("Failed to create span: %v", spanErr)
 			return
 		}
-		if createdSpan != nil && createdSpan.ID != "" {
+		if createdSpan.ID != "" {
 			spanID = createdSpan.ID
 		}
-		if parentObsID != nil {
+		if hasParent {
 			h.parents[spanID] = *parentObsID
 		}
 	}
@@ -424,16 +419,16 @@ func (h *Hook) handleNodeEnd(ctx context.Context, span *graph.TraceSpan) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	obsID, ok := h.observations[span.ID]
-	if !ok {
+	obsID, obsExists := h.observations[span.ID]
+	if !obsExists {
 		return
 	}
 
 	// Find parent trace
 	var traceID string
 	if span.ParentID != "" {
-		if trace, ok := h.traces[span.ParentID]; ok {
-			traceID = trace.ID
+		if parentTrace, traceExists := h.traces[span.ParentID]; traceExists {
+			traceID = parentTrace.ID
 		}
 	}
 
@@ -457,6 +452,12 @@ func (h *Hook) handleNodeEnd(ctx context.Context, span *graph.TraceSpan) {
 	// Check if this is an AI operation
 	isAINode := h.isAIOperation(span.NodeName)
 
+	// Get parent observation ID for both cases
+	var parentObsID *string
+	if parentID, hasParentID := h.parents[obsID]; hasParentID && parentID != "" {
+		parentObsID = &parentID
+	}
+
 	if isAINode {
 		// Update generation
 		generation := &model.Generation{
@@ -469,14 +470,8 @@ func (h *Hook) handleNodeEnd(ctx context.Context, span *graph.TraceSpan) {
 			Usage:    h.extractUsage(span),
 		}
 
-		var parentObsID *string
-		if parentID, ok := h.parents[obsID]; ok && parentID != "" {
-			parentObsID = &parentID
-		}
-
-		_, err := h.client.Generation(generation, parentObsID)
-		if err != nil {
-			log.Printf("Failed to update generation: %v", err)
+		if _, genErr := h.client.Generation(generation, parentObsID); genErr != nil {
+			log.Printf("Failed to update generation: %v", genErr)
 		}
 	} else {
 		// Update span
@@ -489,14 +484,8 @@ func (h *Hook) handleNodeEnd(ctx context.Context, span *graph.TraceSpan) {
 			Metadata: metadata,
 		}
 
-		var parentObsID *string
-		if parentID, ok := h.parents[obsID]; ok && parentID != "" {
-			parentObsID = &parentID
-		}
-
-		_, err := h.client.Span(langfuseSpan, parentObsID)
-		if err != nil {
-			log.Printf("Failed to update span: %v", err)
+		if _, spanErr := h.client.Span(langfuseSpan, parentObsID); spanErr != nil {
+			log.Printf("Failed to update span: %v", spanErr)
 		}
 	}
 }
@@ -517,7 +506,7 @@ func (h *Hook) isAIOperation(nodeName string) bool {
 		"ai", "llm", "generate", "completion", "chat",
 		"gpt", "claude", "gemini", "openai",
 	}
-	
+
 	for _, pattern := range aiPatterns {
 		if containsIgnoreCase(nodeName, pattern) {
 			return true
@@ -529,8 +518,8 @@ func (h *Hook) isAIOperation(nodeName string) bool {
 func (h *Hook) extractModel(span *graph.TraceSpan) string {
 	// Extract model from metadata if available
 	if span.Metadata != nil {
-		if model, ok := span.Metadata["model"].(string); ok {
-			return model
+		if modelStr, exists := span.Metadata["model"].(string); exists {
+			return modelStr
 		}
 	}
 	// Default model names based on patterns
@@ -548,30 +537,36 @@ func (h *Hook) extractModel(span *graph.TraceSpan) string {
 
 func (h *Hook) extractModelParams(span *graph.TraceSpan) map[string]interface{} {
 	params := make(map[string]interface{})
-	
+
 	// Default parameters
 	params["temperature"] = 0.7
 	params["max_tokens"] = 2048
-	
+
 	// Override with metadata if available
 	if span.Metadata != nil {
-		if temp, ok := span.Metadata["temperature"]; ok {
+		if temp, hasTemp := span.Metadata["temperature"]; hasTemp {
 			params["temperature"] = temp
 		}
-		if maxTokens, ok := span.Metadata["max_tokens"]; ok {
+		if maxTokens, hasMaxTokens := span.Metadata["max_tokens"]; hasMaxTokens {
 			params["max_tokens"] = maxTokens
 		}
 	}
-	
+
 	return params
 }
 
 func (h *Hook) extractUsage(span *graph.TraceSpan) model.Usage {
 	// Extract usage from metadata if available
 	if span.Metadata != nil {
-		if usage, ok := span.Metadata["usage"].(map[string]interface{}); ok {
-			input, _ := usage["input"].(int)
-			output, _ := usage["output"].(int)
+		if usage, hasUsage := span.Metadata["usage"].(map[string]interface{}); hasUsage {
+			input, inputOk := usage["input"].(int)
+			output, outputOk := usage["output"].(int)
+			if !inputOk {
+				input = 0
+			}
+			if !outputOk {
+				output = 0
+			}
 			return model.Usage{
 				Input:  input,
 				Output: output,
@@ -579,7 +574,7 @@ func (h *Hook) extractUsage(span *graph.TraceSpan) model.Usage {
 			}
 		}
 	}
-	
+
 	// Return estimated usage
 	return model.Usage{
 		Input:  100,
@@ -589,9 +584,9 @@ func (h *Hook) extractUsage(span *graph.TraceSpan) model.Usage {
 }
 
 func containsIgnoreCase(s, substr string) bool {
-	return len(s) >= len(substr) && 
-		(s == substr || 
-		containsString(toLowerCase(s), toLowerCase(substr)))
+	return len(s) >= len(substr) &&
+		(s == substr ||
+			containsString(toLowerCase(s), toLowerCase(substr)))
 }
 
 func containsString(s, substr string) bool {

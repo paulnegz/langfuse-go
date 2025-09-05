@@ -16,7 +16,7 @@ jobs:
   build:
     name: test
     runs-on: ubuntu-latest
-    container: golang:latest
+    container: golang:1.22
     steps:
     - uses: actions/checkout@1.0.0
     - name: Get dependencies
@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.22'
           cache: false
       - uses: actions/checkout@v3
       - name: golangci-lint
@@ -38,4 +38,4 @@ jobs:
           # Require: The version of golangci-lint to use.
           # When `install-mode` is `binary` (default) the value can be v1.2 or v1.2.3 or `latest` to use the latest version.
           # When `install-mode` is `goinstall` the value can be v1.2.3, `latest`, or the hash of a commit.
-          version: v1.54.2
+          version: v1.55.2

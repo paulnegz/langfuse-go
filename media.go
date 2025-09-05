@@ -16,15 +16,15 @@ import (
 
 // MediaContent represents a media file or data
 type MediaContent struct {
-	ID          string    `json:"id"`
-	Data        []byte    `json:"-"`              // Raw data (not serialized)
-	DataURI     string    `json:"data,omitempty"` // Base64 data URI
-	ContentType string    `json:"content_type"`
-	FileName    string    `json:"file_name,omitempty"`
-	Size        int       `json:"size"`
-	Hash        string    `json:"hash"`
+	ID          string     `json:"id"`
+	Data        []byte     `json:"-"`              // Raw data (not serialized)
+	DataURI     string     `json:"data,omitempty"` // Base64 data URI
+	ContentType string     `json:"content_type"`
+	FileName    string     `json:"file_name,omitempty"`
+	Size        int        `json:"size"`
+	Hash        string     `json:"hash"`
 	UploadedAt  *time.Time `json:"uploaded_at,omitempty"`
-	ReferenceID string    `json:"reference_id,omitempty"`
+	ReferenceID string     `json:"reference_id,omitempty"`
 }
 
 // NewMediaFromFile creates media content from a file path
@@ -34,19 +34,19 @@ func NewMediaFromFile(filePath string) (*MediaContent, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
-	
+
 	// Detect content type
 	contentType := mime.TypeByExtension(filepath.Ext(filePath))
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	
+
 	// Calculate hash
 	hash := fmt.Sprintf("%x", sha256.Sum256(data))
-	
+
 	// Create data URI
 	dataURI := fmt.Sprintf("data:%s;base64,%s", contentType, base64.StdEncoding.EncodeToString(data))
-	
+
 	return &MediaContent{
 		ID:          uuid.New().String(),
 		Data:        data,
@@ -63,10 +63,10 @@ func NewMediaFromBytes(data []byte, contentType string, fileName string) *MediaC
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	
+
 	hash := fmt.Sprintf("%x", sha256.Sum256(data))
 	dataURI := fmt.Sprintf("data:%s;base64,%s", contentType, base64.StdEncoding.EncodeToString(data))
-	
+
 	return &MediaContent{
 		ID:          uuid.New().String(),
 		Data:        data,
@@ -84,19 +84,19 @@ func NewMediaFromDataURI(dataURI string) (*MediaContent, error) {
 	if !strings.HasPrefix(dataURI, "data:") {
 		return nil, fmt.Errorf("invalid data URI format")
 	}
-	
+
 	parts := strings.SplitN(dataURI[5:], ",", 2)
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid data URI format")
 	}
-	
+
 	// Parse media type and encoding
 	mimeInfo := parts[0]
 	encodedData := parts[1]
-	
+
 	contentType := "text/plain"
 	isBase64 := false
-	
+
 	if mimeInfo != "" {
 		mimeParts := strings.Split(mimeInfo, ";")
 		contentType = mimeParts[0]
@@ -106,7 +106,7 @@ func NewMediaFromDataURI(dataURI string) (*MediaContent, error) {
 			}
 		}
 	}
-	
+
 	// Decode data
 	var data []byte
 	var err error
@@ -118,9 +118,9 @@ func NewMediaFromDataURI(dataURI string) (*MediaContent, error) {
 	} else {
 		data = []byte(encodedData)
 	}
-	
+
 	hash := fmt.Sprintf("%x", sha256.Sum256(data))
-	
+
 	return &MediaContent{
 		ID:          uuid.New().String(),
 		Data:        data,
@@ -141,13 +141,13 @@ func (m *MediaContent) ToReferenceString() string {
 
 // MediaUploader handles asynchronous media uploads
 type MediaUploader struct {
-	client      *Langfuse
-	queue       chan *MediaUploadTask
-	workers     int
-	wg          sync.WaitGroup
-	mu          sync.RWMutex
-	uploads     map[string]*MediaUploadStatus
-	dedupCache  map[string]string // hash -> reference_id
+	client     *Langfuse
+	queue      chan *MediaUploadTask
+	workers    int
+	wg         sync.WaitGroup
+	mu         sync.RWMutex
+	uploads    map[string]*MediaUploadStatus
+	dedupCache map[string]string // hash -> reference_id
 }
 
 // MediaUploadTask represents a media upload task
@@ -173,7 +173,7 @@ func NewMediaUploader(client *Langfuse, workers int) *MediaUploader {
 	if workers <= 0 {
 		workers = 2
 	}
-	
+
 	uploader := &MediaUploader{
 		client:     client,
 		queue:      make(chan *MediaUploadTask, 100),
@@ -181,13 +181,13 @@ func NewMediaUploader(client *Langfuse, workers int) *MediaUploader {
 		uploads:    make(map[string]*MediaUploadStatus),
 		dedupCache: make(map[string]string),
 	}
-	
+
 	// Start workers
 	for i := 0; i < workers; i++ {
 		uploader.wg.Add(1)
 		go uploader.worker()
 	}
-	
+
 	return uploader
 }
 
@@ -201,25 +201,25 @@ func (mu *MediaUploader) Upload(media *MediaContent, traceID string, spanID stri
 		return refID, nil
 	}
 	mu.mu.RUnlock()
-	
+
 	// Create upload status
 	status := &MediaUploadStatus{
 		ID:        media.ID,
 		Status:    "queued",
 		StartedAt: time.Now(),
 	}
-	
+
 	mu.mu.Lock()
 	mu.uploads[media.ID] = status
 	mu.mu.Unlock()
-	
+
 	// Queue upload task
 	task := &MediaUploadTask{
 		Media:   media,
 		TraceID: traceID,
 		SpanID:  spanID,
 	}
-	
+
 	select {
 	case mu.queue <- task:
 		return media.ID, nil
@@ -236,14 +236,14 @@ func (mu *MediaUploader) UploadWithCallback(media *MediaContent, traceID string,
 		SpanID:   spanID,
 		Callback: callback,
 	}
-	
+
 	mu.queue <- task
 }
 
 // worker processes upload tasks
 func (mu *MediaUploader) worker() {
 	defer mu.wg.Done()
-	
+
 	for task := range mu.queue {
 		mu.processUpload(task)
 	}
@@ -257,14 +257,14 @@ func (mu *MediaUploader) processUpload(task *MediaUploadTask) {
 		status.Status = "uploading"
 	}
 	mu.mu.Unlock()
-	
+
 	// Simulate upload to Langfuse API
 	// In real implementation, this would POST to the media endpoint
 	time.Sleep(100 * time.Millisecond)
-	
+
 	// Generate reference ID (in real implementation, this comes from API)
 	referenceID := fmt.Sprintf("media_%s", uuid.New().String())
-	
+
 	// Update dedup cache
 	mu.mu.Lock()
 	mu.dedupCache[task.Media.Hash] = referenceID
@@ -275,12 +275,12 @@ func (mu *MediaUploader) processUpload(task *MediaUploadTask) {
 		status.CompletedAt = &now
 	}
 	mu.mu.Unlock()
-	
+
 	// Set reference ID on media
 	task.Media.ReferenceID = referenceID
 	now := time.Now()
 	task.Media.UploadedAt = &now
-	
+
 	// Call callback if provided
 	if task.Callback != nil {
 		task.Callback(referenceID, nil)
@@ -297,25 +297,25 @@ func (mu *MediaUploader) GetStatus(mediaID string) *MediaUploadStatus {
 // WaitForUpload waits for a specific upload to complete
 func (mu *MediaUploader) WaitForUpload(mediaID string, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
-	
+
 	for {
 		status := mu.GetStatus(mediaID)
 		if status == nil {
 			return "", fmt.Errorf("upload not found: %s", mediaID)
 		}
-		
+
 		if status.Status == "completed" {
 			return status.ReferenceID, nil
 		}
-		
+
 		if status.Status == "failed" {
 			return "", status.Error
 		}
-		
+
 		if time.Now().After(deadline) {
 			return "", fmt.Errorf("upload timeout")
 		}
-		
+
 		time.Sleep(100 * time.Millisecond)
 	}
 }
@@ -358,7 +358,7 @@ func (mp *MediaProcessor) processValue(value interface{}, traceID string, spanID
 			return v.ToReferenceString()
 		}
 		return fmt.Sprintf("@media/%s", refID)
-		
+
 	case map[string]interface{}:
 		// Process map values
 		result := make(map[string]interface{})
@@ -366,7 +366,7 @@ func (mp *MediaProcessor) processValue(value interface{}, traceID string, spanID
 			result[key] = mp.processValue(val, traceID, spanID)
 		}
 		return result
-		
+
 	case []interface{}:
 		// Process array values
 		result := make([]interface{}, len(v))
@@ -374,7 +374,7 @@ func (mp *MediaProcessor) processValue(value interface{}, traceID string, spanID
 			result[i] = mp.processValue(val, traceID, spanID)
 		}
 		return result
-		
+
 	default:
 		return value
 	}
@@ -427,7 +427,7 @@ func (mh *MediaHelper) AttachImage(filePath string, traceID string, spanID strin
 	if err != nil {
 		return "", err
 	}
-	
+
 	return mh.uploader.Upload(media, traceID, spanID)
 }
 

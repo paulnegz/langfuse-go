@@ -15,8 +15,8 @@ import (
 // Example: Advanced LangGraph workflow with conditional routing and AI operations
 func main() {
 	// Set up Langfuse credentials
-	os.Setenv("LANGFUSE_PUBLIC_KEY", "your_public_key")
-	os.Setenv("LANGFUSE_SECRET_KEY", "your_secret_key")
+	_ = os.Setenv("LANGFUSE_PUBLIC_KEY", "your_public_key")
+	_ = os.Setenv("LANGFUSE_SECRET_KEY", "your_secret_key")
 
 	// Create advanced workflow with conditional logic
 	workflow := createAdvancedWorkflow()
@@ -41,7 +41,10 @@ func main() {
 	tracer.AddHook(hook)
 
 	// Compile and create traced runnable
-	compiled := workflow.Compile()
+	compiled, err := workflow.Compile()
+	if err != nil {
+		log.Fatalf("Failed to compile workflow: %v", err)
+	}
 	tracedWorkflow := graph.NewTracedRunnable(compiled, tracer)
 
 	// Prepare complex input
@@ -80,160 +83,168 @@ func createAdvancedWorkflow() *graph.StateGraph {
 	}
 
 	type WorkflowState struct {
-		Query       string
-		Language    string
-		MaxLength   int
-		Style       string
-		Complexity  string
-		Response    AIResponse
-		Cache       map[string]interface{}
-		Errors      []string
-		Metadata    map[string]interface{}
+		Query      string
+		Language   string
+		MaxLength  int
+		Style      string
+		Complexity string
+		Response   AIResponse
+		Cache      map[string]interface{}
+		Errors     []string
+		Metadata   map[string]interface{}
 	}
 
-	workflow := graph.NewStateGraph(WorkflowState{})
+	workflow := graph.NewStateGraph()
 
 	// Entry point: Validate and classify query
-	workflow.AddNode("classify_query", func(ctx context.Context, state WorkflowState) (WorkflowState, error) {
+	workflow.AddNode("classify_query", func(ctx context.Context, state interface{}) (interface{}, error) {
+		ws := state.(WorkflowState)
 		// Simulate query classification
-		if len(state.Query) < 10 {
-			state.Complexity = "simple"
-		} else if len(state.Query) < 50 {
-			state.Complexity = "moderate"
+		if len(ws.Query) < 10 {
+			ws.Complexity = "simple"
+		} else if len(ws.Query) < 50 {
+			ws.Complexity = "moderate"
 		} else {
-			state.Complexity = "complex"
+			ws.Complexity = "complex"
 		}
-		
-		log.Printf("Query classified as: %s", state.Complexity)
-		return state, nil
+
+		log.Printf("Query classified as: %s", ws.Complexity)
+		return ws, nil
 	})
 
 	// Check cache for existing responses
-	workflow.AddNode("check_cache", func(ctx context.Context, state WorkflowState) (WorkflowState, error) {
-		if state.Cache == nil {
-			state.Cache = make(map[string]interface{})
+	workflow.AddNode("check_cache", func(ctx context.Context, state interface{}) (interface{}, error) {
+		ws := state.(WorkflowState)
+		if ws.Cache == nil {
+			ws.Cache = make(map[string]interface{})
 		}
-		
-		cacheKey := fmt.Sprintf("%s_%s_%s", state.Query, state.Language, state.Style)
-		if cached, exists := state.Cache[cacheKey]; exists {
+
+		cacheKey := fmt.Sprintf("%s_%s_%s", ws.Query, ws.Language, ws.Style)
+		if cached, exists := ws.Cache[cacheKey]; exists {
 			log.Println("Cache hit!")
 			if response, ok := cached.(AIResponse); ok {
-				state.Response = response
+				ws.Response = response
 			}
 		}
-		return state, nil
+		return ws, nil
 	})
 
 	// Simple AI operation for basic queries
-	workflow.AddNode("simple_ai_generation", func(ctx context.Context, state WorkflowState) (WorkflowState, error) {
+	workflow.AddNode("simple_ai_generation", func(ctx context.Context, state interface{}) (interface{}, error) {
+		ws := state.(WorkflowState)
 		start := time.Now()
-		
+
 		// Simulate simple AI generation
 		time.Sleep(100 * time.Millisecond)
-		
-		state.Response = AIResponse{
-			Content:    fmt.Sprintf("Simple response to: %s", state.Query),
+
+		ws.Response = AIResponse{
+			Content:    fmt.Sprintf("Simple response to: %s", ws.Query),
 			Model:      "gpt-3.5-turbo",
 			TokenCount: 50 + rand.Intn(50),
 			Duration:   time.Since(start),
 		}
-		
+
 		// Add to metadata for tracing
-		if state.Metadata == nil {
-			state.Metadata = make(map[string]interface{})
+		if ws.Metadata == nil {
+			ws.Metadata = make(map[string]interface{})
 		}
-		state.Metadata["model"] = state.Response.Model
-		state.Metadata["usage"] = map[string]interface{}{
+		ws.Metadata["model"] = ws.Response.Model
+		ws.Metadata["usage"] = map[string]interface{}{
 			"input":  25,
-			"output": state.Response.TokenCount,
+			"output": ws.Response.TokenCount,
 		}
-		
-		return state, nil
+
+		return ws, nil
 	})
 
 	// Complex AI operation for advanced queries
-	workflow.AddNode("complex_ai_generation", func(ctx context.Context, state WorkflowState) (WorkflowState, error) {
+	workflow.AddNode("complex_ai_generation", func(ctx context.Context, state interface{}) (interface{}, error) {
+		ws := state.(WorkflowState)
 		start := time.Now()
-		
+
 		// Simulate complex AI generation with multiple steps
 		time.Sleep(300 * time.Millisecond)
-		
-		state.Response = AIResponse{
+
+		ws.Response = AIResponse{
 			Content: fmt.Sprintf("Advanced %s explanation of '%s': [Detailed technical content would go here]",
-				state.Style, state.Query),
+				ws.Style, ws.Query),
 			Model:      "gpt-4",
 			TokenCount: 200 + rand.Intn(300),
 			Duration:   time.Since(start),
 		}
-		
+
 		// Add to metadata
-		if state.Metadata == nil {
-			state.Metadata = make(map[string]interface{})
+		if ws.Metadata == nil {
+			ws.Metadata = make(map[string]interface{})
 		}
-		state.Metadata["model"] = state.Response.Model
-		state.Metadata["temperature"] = 0.7
-		state.Metadata["max_tokens"] = state.MaxLength
-		state.Metadata["usage"] = map[string]interface{}{
+		ws.Metadata["model"] = ws.Response.Model
+		ws.Metadata["temperature"] = 0.7
+		ws.Metadata["max_tokens"] = ws.MaxLength
+		ws.Metadata["usage"] = map[string]interface{}{
 			"input":  100,
-			"output": state.Response.TokenCount,
+			"output": ws.Response.TokenCount,
 		}
-		
-		return state, nil
+
+		return ws, nil
 	})
 
 	// Post-processing and formatting
-	workflow.AddNode("format_response", func(ctx context.Context, state WorkflowState) (WorkflowState, error) {
+	workflow.AddNode("format_response", func(ctx context.Context, state interface{}) (interface{}, error) {
+		ws := state.(WorkflowState)
 		// Apply formatting based on style
-		switch state.Style {
+		switch ws.Style {
 		case "technical":
-			state.Response.Content = fmt.Sprintf("## Technical Analysis\n\n%s\n\n*Model: %s | Tokens: %d*",
-				state.Response.Content, state.Response.Model, state.Response.TokenCount)
+			ws.Response.Content = fmt.Sprintf("## Technical Analysis\n\n%s\n\n*Model: %s | Tokens: %d*",
+				ws.Response.Content, ws.Response.Model, ws.Response.TokenCount)
 		case "simple":
-			state.Response.Content = fmt.Sprintf("Here's a simple explanation:\n\n%s",
-				state.Response.Content)
+			ws.Response.Content = fmt.Sprintf("Here's a simple explanation:\n\n%s",
+				ws.Response.Content)
 		default:
-			state.Response.Content = fmt.Sprintf("%s\n\n---\nGenerated in %v",
-				state.Response.Content, state.Response.Duration)
+			ws.Response.Content = fmt.Sprintf("%s\n\n---\nGenerated in %v",
+				ws.Response.Content, ws.Response.Duration)
 		}
-		return state, nil
+		return ws, nil
 	})
 
 	// Save to cache
-	workflow.AddNode("save_to_cache", func(ctx context.Context, state WorkflowState) (WorkflowState, error) {
-		if state.Cache == nil {
-			state.Cache = make(map[string]interface{})
+	workflow.AddNode("save_to_cache", func(ctx context.Context, state interface{}) (interface{}, error) {
+		ws := state.(WorkflowState)
+		if ws.Cache == nil {
+			ws.Cache = make(map[string]interface{})
 		}
-		
-		cacheKey := fmt.Sprintf("%s_%s_%s", state.Query, state.Language, state.Style)
-		state.Cache[cacheKey] = state.Response
-		
+
+		cacheKey := fmt.Sprintf("%s_%s_%s", ws.Query, ws.Language, ws.Style)
+		ws.Cache[cacheKey] = ws.Response
+
 		log.Printf("Response cached with key: %s", cacheKey)
-		return state, nil
+		return ws, nil
 	})
 
 	// Error handling node
-	workflow.AddNode("handle_error", func(ctx context.Context, state WorkflowState) (WorkflowState, error) {
-		state.Response = AIResponse{
+	workflow.AddNode("handle_error", func(ctx context.Context, state interface{}) (interface{}, error) {
+		ws := state.(WorkflowState)
+		ws.Response = AIResponse{
 			Content: "An error occurred during processing. Please try again.",
 			Model:   "fallback",
 		}
-		state.Errors = append(state.Errors, "Processing failed")
-		return state, nil
+		ws.Errors = append(ws.Errors, "Processing failed")
+		return ws, nil
 	})
 
 	// Define conditional routing
 	workflow.SetEntryPoint("classify_query")
 	workflow.AddEdge("classify_query", "check_cache")
-	
+
 	// Conditional routing based on cache and complexity
 	workflow.AddConditionalEdges("check_cache",
-		func(ctx context.Context, state WorkflowState) string {
+		func(ctx context.Context, state interface{}) string {
+			ws := state.(WorkflowState)
 			// If cached, skip to formatting
-			if state.Response.Content != "" {
+			if ws.Response.Content != "" {
 				return "format_response"
 			}
 			// Route based on complexity
-			if state.Complexity == "complex" {
+			if ws.Complexity == "complex" {
 				return "complex_ai_generation"
 			}
 			return "simple_ai_generation"
@@ -244,17 +255,17 @@ func createAdvancedWorkflow() *graph.StateGraph {
 			"format_response":       "format_response",
 		},
 	)
-	
+
 	// Both AI nodes lead to formatting
 	workflow.AddEdge("simple_ai_generation", "format_response")
 	workflow.AddEdge("complex_ai_generation", "format_response")
-	
+
 	// Format leads to caching
 	workflow.AddEdge("format_response", "save_to_cache")
-	
+
 	// Cache leads to END
 	workflow.AddEdge("save_to_cache", graph.END)
-	
+
 	// Error handling can lead to END
 	workflow.AddEdge("handle_error", graph.END)
 
